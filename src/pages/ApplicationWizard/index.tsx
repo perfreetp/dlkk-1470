@@ -1,6 +1,6 @@
 
 import { useEffect, useState } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { ArrowLeft, Save, ChevronRight, ChevronLeft } from 'lucide-react';
 import { useApplicationStore } from '@/store/applicationStore';
 import WizardSteps from '@/components/WizardSteps';
@@ -16,19 +16,29 @@ import { ORG_CATEGORY_MAP } from '@/types';
 export default function ApplicationWizard() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const { applications, setCurrentApplication, currentApplication, currentStep, setCurrentStep, saveCurrentApplication } = useApplicationStore();
   const [isSaving, setIsSaving] = useState(false);
+  const initializedRef = useState<{ stepSet: boolean }>({ stepSet: false });
 
   useEffect(() => {
     if (id) {
       const app = applications.find(a => a.id === id);
       if (app) {
         setCurrentApplication(app);
+        const stepParam = searchParams.get('step');
+        if (stepParam && !initializedRef[0].stepSet) {
+          const step = parseInt(stepParam, 10);
+          if (step >= 1 && step <= 7) {
+            setCurrentStep(step);
+            initializedRef[0].stepSet = true;
+          }
+        }
       } else {
         navigate('/applications');
       }
     }
-  }, [id, applications, navigate, setCurrentApplication]);
+  }, [id, applications, navigate, setCurrentApplication, searchParams]);
 
   const handleNext = () => {
     if (currentStep < 7) {

@@ -1,7 +1,7 @@
 
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import { Application, ApplicationType, BasicInfo, Department, Personnel, Premises, Equipment, Attachment, ApplicationStatus, OrgCategory, PromiseData } from '@/types';
+import { Application, ApplicationType, BasicInfo, Department, Personnel, Premises, Equipment, Attachment, ApplicationStatus, OrgCategory, PromiseData, CorrectionOpinion, ApplicationVersion } from '@/types';
 import { mockApplications } from '@/utils/mockData';
 import { generateId } from '@/utils/mockData';
 
@@ -32,6 +32,12 @@ interface ApplicationState {
   removeAttachment: (id: string) => void;
   updatePromise: (promise: Partial<PromiseData>) => void;
   submitApplication: (id?: string) => boolean;
+  acceptApplication: (id: string) => boolean;
+  reviewApplication: (id: string) => boolean;
+  approveApplication: (id: string) => boolean;
+  returnApplication: (id: string, opinions: string[]) => boolean;
+  addCorrectionOpinion: (id: string, opinion: Omit<CorrectionOpinion, 'id' | 'date'>) => boolean;
+  addVersion: (id: string, version: Omit<ApplicationVersion, 'submitTime'>) => boolean;
   deleteApplication: (id: string) => void;
   saveCurrentApplication: () => void;
 }
@@ -427,9 +433,180 @@ export const useApplicationStore = create<ApplicationState>()(
         }));
         
         return true;
-      },
+    },
 
-      deleteApplication: (id: string) => {
+    acceptApplication: (id: string) => {
+      const app = get().applications.find(a => a.id === id);
+      if (!app || app.status !== 'submitted') return false;
+      
+      const now = new Date().toISOString();
+      const versionNo = app.versions.length;
+      const updatedVersions = [...app.versions];
+      if (updatedVersions.length > 0) {
+        updatedVersions[versionNo - 1] = {
+          ...updatedVersions[versionNo - 1],
+          status: 'reviewing',
+        };
+      }
+      
+      set(state => ({
+        applications: state.applications.map(a =>
+          a.id === id
+            ? { ...a, status: 'reviewing' as ApplicationStatus, versions: updatedVersions }
+            : a
+        ),
+        currentApplication:
+          state.currentApplication?.id === id
+            ? { ...state.currentApplication, status: 'reviewing' as ApplicationStatus, versions: updatedVersions }
+            : state.currentApplication,
+      }));
+      return true;
+    },
+
+    reviewApplication: (id: string) => {
+      const app = get().applications.find(a => a.id === id);
+      if (!app || app.status !== 'reviewing') return false;
+      return true;
+    },
+
+    approveApplication: (id: string) => {
+      const app = get().applications.find(a => a.id === id);
+      if (!app || (app.status !== 'reviewing' && app.status !== 'submitted')) return false;
+      
+      const now = new Date().toISOString();
+      const versionNo = app.versions.length;
+      const updatedVersions = [...app.versions];
+      if (updatedVersions.length > 0) {
+        updatedVersions[versionNo - 1] = {
+          ...updatedVersions[versionNo - 1],
+          status: 'approved',
+        };
+      }
+      
+      const passOpinion: CorrectionOpinion = {
+        id: generateId(),
+        content: '申报材料审核通过，符合医疗机构执业登记要求，准予登记。',
+        date: now,
+        operator: '卫生健康委员会-审核科',
+      };
+      
+      set(state => ({
+        applications: state.applications.map(a =>
+          a.id === id
+            ? {
+                ...a,
+                status: 'approved' as ApplicationStatus,
+                versions: updatedVersions,
+                correctionOpinions: [...a.correctionOpinions, passOpinion],
+              }
+            : a
+        ),
+        currentApplication:
+          state.currentApplication?.id === id
+            ? {
+                ...state.currentApplication,
+                status: 'approved' as ApplicationStatus,
+                versions: updatedVersions,
+                correctionOpinions: [...state.currentApplication.correctionOpinions, passOpinion],
+              }
+            : state.currentApplication,
+      }));
+      return true;
+    },
+
+    returnApplication: (id: string, opinions: string[]) => {
+      const app = get().applications.find(a => a.id === id);
+      if (!app || (app.status !== 'reviewing' && app.status !== 'submitted')) return false;
+      
+      const now = new Date().toISOString();
+      const versionNo = app.versions.length;
+      const updatedVersions = [...app.versions];
+      if (updatedVersions.length > 0) {
+        updatedVersions[versionNo - 1] = {
+          ...updatedVersions[versionNo - 1],
+          status: 'returned',
+        };
+      }
+      
+      const newOpinions: CorrectionOpinion[] = opinions.map(content => ({
+        id: generateId(),
+        content,
+        date: now,
+        operator: '卫生健康委员会-审核科',
+      }));
+      
+      set(state => ({
+        applications: state.applications.map(a =>
+          a.id === id
+            ? {
+                ...a,
+                status: 'returned' as ApplicationStatus,
+                versions: updatedVersions,
+                correctionOpinions: [...a.correctionOpinions, ...newOpinions],
+              }
+            : a
+        ),
+        currentApplication:
+          state.currentApplication?.id === id
+            ? {
+                ...state.currentApplication,
+                status: 'returned' as ApplicationStatus,
+                versions: updatedVersions,
+                correctionOpinions: [...state.currentApplication.correctionOpinions, ...newOpinions],
+              }
+            : state.currentApplication,
+      }));
+      return true;
+    },
+
+    addCorrectionOpinion: (id: string, opinion: Omit<CorrectionOpinion, 'id' | 'date'>) => {
+      const app = get().applications.find(a => a.id === id);
+      if (!app) return false;
+      
+      const newOpinion: CorrectionOpinion = {
+        ...opinion,
+        id: generateId(),
+        date: new Date().toISOString(),
+      };
+      
+      set(state => ({
+        applications: state.applications.map(a =>
+          a.id === id
+            ? { ...a, correctionOpinions: [...a.correctionOpinions, newOpinion] }
+            : a
+        ),
+        currentApplication:
+          state.currentApplication?.id === id
+            ? { ...state.currentApplication, correctionOpinions: [...state.currentApplication.correctionOpinions, newOpinion] }
+            : state.currentApplication,
+      }));
+      return true;
+    },
+
+    addVersion: (id: string, version: Omit<ApplicationVersion, 'submitTime'>) => {
+      const app = get().applications.find(a => a.id === id);
+      if (!app) return false;
+      
+      const newVersion: ApplicationVersion = {
+        ...version,
+        submitTime: new Date().toISOString(),
+      };
+      
+      set(state => ({
+        applications: state.applications.map(a =>
+          a.id === id
+            ? { ...a, versions: [...a.versions, newVersion] }
+            : a
+        ),
+        currentApplication:
+          state.currentApplication?.id === id
+            ? { ...state.currentApplication, versions: [...state.currentApplication.versions, newVersion] }
+            : state.currentApplication,
+      }));
+      return true;
+    },
+
+    deleteApplication: (id: string) => {
         set(state => ({
           applications: state.applications.filter(app => app.id !== id),
           currentApplication:

@@ -148,11 +148,19 @@ export const checkDepartmentEquipmentMatch = (
       !equipment.some(e => e.name.includes(eq) || eq.includes(e.name))
     );
     
-    if (missingEquipment.length > 0 && missingEquipment.length >= requiredEquipment.length * 0.5) {
+    const missingRatio = missingEquipment.length / requiredEquipment.length;
+    
+    if (missingEquipment.length > 0 && missingRatio >= 0.5) {
+      results.push({
+        type: 'error',
+        field: `departments[${deptIndex}].equipment`,
+        message: `「${dept.name}」缺少核心设备：${missingEquipment.join('、')}，请补充配置后再提交`
+      });
+    } else if (missingEquipment.length > 0) {
       results.push({
         type: 'warning',
         field: `departments[${deptIndex}].equipment`,
-        message: `「${dept.name}」建议配置：${missingEquipment.slice(0, 3).join('、')}等设备`
+        message: `「${dept.name}」建议补充：${missingEquipment.slice(0, 3).join('、')}等设备`
       });
     }
   });

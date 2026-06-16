@@ -17,7 +17,9 @@ import {
   Stethoscope,
   Users,
   ShieldAlert,
-  AlertTriangle
+  AlertTriangle,
+  ArrowRight,
+  Edit3
 } from 'lucide-react';
 import { useApplicationStore } from '@/store/applicationStore';
 import { generateMissingItems, validateApplication, getUnfinishedPromises } from '@/utils/validator';
@@ -68,6 +70,10 @@ export default function ApplicationPreview() {
 
   const goToPromiseStep = () => {
     navigate(`/applications/${application.id}/edit?step=7`);
+  };
+
+  const goToStep = (step: number) => {
+    navigate(`/applications/${application.id}/edit?step=${step}`);
   };
 
   const groupedMissingItems = missingItems.reduce((acc, item) => {
@@ -155,34 +161,53 @@ export default function ApplicationPreview() {
             </p>
           </div>
           <div className="p-5 space-y-5">
-            {Object.entries(groupedMissingItems).map(([category, items]) => (
-              <div key={category}>
-                <h4 className="text-sm font-medium text-gray-900 mb-2 flex items-center gap-2">
-                  <span className="w-1.5 h-1.5 bg-amber-500 rounded-full"></span>
-                  {category}
-                  <span className="text-xs text-gray-500 font-normal">
-                    ({items.length}项)
-                  </span>
-                </h4>
-                <div className="space-y-2 ml-3">
-                  {items.map((item, index) => (
-                    <div 
-                      key={index}
-                      className="flex items-start gap-2 p-2.5 bg-amber-50 rounded-lg"
-                    >
-                      <XCircle className="w-4 h-4 text-amber-500 flex-shrink-0 mt-0.5" />
-                      <div className="flex-1">
-                        <p className="text-sm font-medium text-amber-900">{item.itemName}</p>
-                        <p className="text-xs text-amber-700 mt-0.5">{item.description}</p>
-                      </div>
-                      <span className="text-xs text-amber-600 bg-amber-100 px-2 py-0.5 rounded flex-shrink-0">
-                        第{item.step}步
+            {Object.entries(groupedMissingItems).map(([category, items]) => {
+              const firstStep = items[0]?.step || 1;
+              return (
+                <div key={category}>
+                  <div className="flex items-center justify-between mb-2">
+                    <h4 className="text-sm font-medium text-gray-900 flex items-center gap-2">
+                      <span className="w-1.5 h-1.5 bg-amber-500 rounded-full"></span>
+                      {category}
+                      <span className="text-xs text-gray-500 font-normal">
+                        ({items.length}项)
                       </span>
-                    </div>
-                  ))}
+                    </h4>
+                    <button
+                      onClick={() => goToStep(firstStep)}
+                      className="flex items-center gap-1 px-2.5 py-1 text-xs font-medium text-blue-600 bg-blue-50 hover:bg-blue-100 rounded-md transition-colors"
+                    >
+                      <Edit3 className="w-3 h-3" />
+                      去第{firstStep}步修改
+                    </button>
+                  </div>
+                  <div className="space-y-2 ml-3">
+                    {items.map((item, index) => (
+                      <div 
+                        key={index}
+                        className="flex items-start gap-2 p-2.5 bg-amber-50 rounded-lg group hover:bg-amber-100 transition-colors"
+                      >
+                        <XCircle className="w-4 h-4 text-amber-500 flex-shrink-0 mt-0.5" />
+                        <div className="flex-1">
+                          <p className="text-sm font-medium text-amber-900">{item.itemName}</p>
+                          <p className="text-xs text-amber-700 mt-0.5">{item.description}</p>
+                        </div>
+                        <button
+                          onClick={() => goToStep(item.step)}
+                          className="flex-shrink-0 opacity-0 group-hover:opacity-100 flex items-center gap-0.5 px-2 py-1 text-xs text-blue-600 bg-white hover:bg-blue-50 rounded transition-all"
+                        >
+                          跳转
+                          <ArrowRight className="w-3 h-3" />
+                        </button>
+                        <span className="text-xs text-amber-600 bg-amber-100 px-2 py-0.5 rounded flex-shrink-0 group-hover:hidden">
+                          第{item.step}步
+                        </span>
+                      </div>
+                    ))}
+                  </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </div>
       )}
