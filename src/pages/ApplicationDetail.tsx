@@ -61,25 +61,8 @@ export default function ApplicationDetail() {
   const statusKey = application.status as keyof typeof statusInfo;
   const StatusIcon = statusInfo[statusKey]?.icon || Clock;
 
-  const correctionOpinions = [
-    {
-      id: 1,
-      date: '2024-01-15',
-      reviewer: '张审核员',
-      opinions: [
-        '机构名称不规范，请按照"行政区划+字号+行业+组织形式"格式命名',
-        '缺少法定代表人身份证正反面扫描件',
-        '医师资格证书已过期，请提供最新有效证件',
-        '诊疗科目与人员配置不匹配，请补充相应科室医师',
-      ],
-    },
-  ];
-
-  const versionHistory = [
-    { version: 'v3', date: '2024-01-20 14:30', status: '草稿', operator: '办证专员' },
-    { version: 'v2', date: '2024-01-15 10:00', status: '已退回', operator: '张审核员' },
-    { version: 'v1', date: '2024-01-10 16:20', status: '已提交', operator: '办证专员' },
-  ];
+  const versions = [...application.versions].reverse();
+  const correctionOpinions = application.correctionOpinions;
 
   return (
     <div className="space-y-6">
@@ -195,31 +178,25 @@ export default function ApplicationDetail() {
                   <div>
                     <h3 className="font-semibold text-red-900">补正意见</h3>
                     <p className="text-xs text-red-600 mt-0.5">
-                      请根据以下意见修改后重新提交
+                      共 {correctionOpinions.length} 条补正意见，请根据意见修改后重新提交
                     </p>
                   </div>
                 </div>
               </div>
-              {correctionOpinions.map(opinion => (
-                <div key={opinion.id} className="p-5">
-                  <div className="flex items-center justify-between mb-3">
-                    <span className="text-sm text-gray-500">
-                      {opinion.date} · {opinion.reviewer}
-                    </span>
-                  </div>
-                  <div className="space-y-2">
-                    {opinion.opinions.map((op, idx) => (
-                      <div 
-                        key={idx}
-                        className="flex items-start gap-2 p-3 bg-red-50 rounded-lg"
-                      >
-                        <AlertCircle className="w-4 h-4 text-red-500 mt-0.5 flex-shrink-0" />
-                        <p className="text-sm text-red-800">{op}</p>
+              <div className="p-5 space-y-3">
+                {correctionOpinions.map(opinion => (
+                  <div key={opinion.id} className="flex items-start gap-3 p-4 bg-red-50 rounded-lg">
+                    <AlertCircle className="w-5 h-5 text-red-500 flex-shrink-0 mt-0.5" />
+                    <div className="flex-1">
+                      <p className="text-sm text-red-900">{opinion.content}</p>
+                      <div className="flex items-center gap-3 mt-2">
+                        <span className="text-xs text-red-600">{opinion.date}</span>
+                        <span className="text-xs text-red-600">· {opinion.operator}</span>
                       </div>
-                    ))}
+                    </div>
                   </div>
-                </div>
-              ))}
+                ))}
+              </div>
             </div>
           )}
 
@@ -234,7 +211,7 @@ export default function ApplicationDetail() {
                 </div>
                 <div className="text-left">
                   <h3 className="font-semibold text-gray-900">版本历史</h3>
-                  <p className="text-xs text-gray-500 mt-0.5">共 {versionHistory.length} 个版本</p>
+                  <p className="text-xs text-gray-500 mt-0.5">共 {versions.length} 个版本</p>
                 </div>
               </div>
               {showHistory ? (
@@ -244,39 +221,31 @@ export default function ApplicationDetail() {
               )}
             </button>
             
-            {showHistory && (
-              <div className="px-5 pb-5 space-y-3">
-                {versionHistory.map((version, index) => (
-                  <div 
-                    key={version.version}
-                    className="flex items-center gap-4 p-3 bg-gray-50 rounded-lg"
-                  >
-                    <div className="relative">
-                      <div className={`w-3 h-3 rounded-full ${
-                        index === 0 ? 'bg-blue-500' : 'bg-gray-300'
-                      }`} />
-                      {index < versionHistory.length - 1 && (
-                        <div className="absolute top-4 left-1/2 -translate-x-1/2 w-px h-8 bg-gray-200" />
-                      )}
-                    </div>
-                    <div className="flex-1">
+            {showHistory && versions.length > 0 && (
+              <div className="px-5 pb-5 space-y-0">
+                {versions.map((version, index) => (
+                  <div key={version.version} className="relative pl-6 pb-4">
+                    {index < versions.length - 1 && (
+                      <div className="absolute left-1.5 top-3 bottom-0 w-px bg-gray-200" />
+                    )}
+                    <div className="absolute left-0 top-1.5 w-3 h-3 rounded-full bg-blue-500 ring-4 ring-blue-100" />
+                    <div className="bg-gray-50 rounded-lg p-3">
                       <div className="flex items-center gap-2">
-                        <span className="font-medium text-gray-900 text-sm">{version.version}</span>
-                        <span className="text-xs px-2 py-0.5 bg-gray-100 text-gray-600 rounded">
-                          {version.status}
-                        </span>
+                        <span className="font-semibold text-gray-900 text-sm">{version.version}</span>
+                        <StatusBadge status={version.status} size="sm" />
                       </div>
-                      <p className="text-xs text-gray-500 mt-0.5">
-                        {version.date} · {version.operator}
+                      <p className="text-xs text-gray-500 mt-1">
+                        {version.submitTime} · {version.remark}
                       </p>
                     </div>
-                    {index !== 0 && (
-                      <button className="text-xs text-blue-600 hover:text-blue-700">
-                        查看详情
-                      </button>
-                    )}
                   </div>
                 ))}
+              </div>
+            )}
+            
+            {showHistory && versions.length === 0 && (
+              <div className="px-5 pb-5">
+                <p className="text-center text-sm text-gray-400 py-4">暂无提交记录</p>
               </div>
             )}
           </div>

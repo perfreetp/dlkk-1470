@@ -15,17 +15,20 @@ import {
   Paperclip,
   Shield,
   Stethoscope,
-  Users
+  Users,
+  ShieldAlert,
+  AlertTriangle
 } from 'lucide-react';
 import { useApplicationStore } from '@/store/applicationStore';
-import { generateMissingItems, validateApplication } from '@/utils/validator';
-import { ORG_CATEGORY_MAP, STATUS_COLOR_MAP } from '@/types';
+import { generateMissingItems, validateApplication, getUnfinishedPromises } from '@/utils/validator';
+import { ORG_CATEGORY_MAP } from '@/types';
 
 export default function ApplicationPreview() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const { applications, submitApplication } = useApplicationStore();
   const [showSubmitConfirm, setShowSubmitConfirm] = useState(false);
+  const [showPromiseWarning, setShowPromiseWarning] = useState(false);
 
   const application = applications.find(a => a.id === id);
 
@@ -36,18 +39,44 @@ export default function ApplicationPreview() {
   const validation = validateApplication(application);
   const missingItems = generateMissingItems(application);
   const canSubmit = validation.valid;
+  const unfinishedPromises = getUnfinishedPromises(application.promise);
 
   const orgCategory = application.basicInfo.orgCategory;
   const typeLabel = application.type === 'setup' ? '设立登记' : '变更登记';
 
   const handleSubmit = () => {
-    submitApplication(application.id);
-    navigate(`/applications/${application.id}`);
+    const success = submitApplication(application.id);
+    if (success) {
+      setShowSubmitConfirm(false);
+      navigate(`/applications/${application.id}`);
+    }
+  };
+
+  const handleSubmitClick = () => {
+    if (unfinishedPromises.length > 0) {
+      setShowPromiseWarning(true);
+      return;
+    }
+    if (canSubmit) {
+      setShowSubmitConfirm(true);
+    }
   };
 
   const handlePrint = () => {
     window.print();
   };
+
+  const goToPromiseStep = () => {
+    navigate(`/applications/${application.id}/edit?step=7`);
+  };
+
+  const groupedMissingItems = missingItems.reduce((acc, item) => {
+    if (!acc[item.category]) {
+      acc[item.category] = [];
+    }
+    acc[item.category].push(item);
+    return acc;
+  }, {} as Record<string, typeof missingItems>);
 
   return (
     <div className="space-y-6 print:space-y-4">
@@ -75,16 +104,15 @@ export default function ApplicationPreview() {
             打印申报表
           </button>
           <button
-            onClick={() => setShowSubmitConfirm(true)}
-            disabled={!canSubmit}
+            onClick={handleSubmitClick}
             className={`flex items-center gap-2 px-5 py-2 rounded-lg font-medium transition-all ${
               canSubmit
                 ? 'bg-blue-600 text-white hover:bg-blue-700 shadow-lg shadow-blue-600/20'
-                : 'bg-gray-200 text-gray-400 cursor-not-allowed'
+                : 'bg-amber-500 text-white hover:bg-amber-600 shadow-lg shadow-amber-500/20'
             }`}
           >
             <Send className="w-4 h-4" />
-            提交申报
+            {canSubmit ? '提交申报' : `检查待补充项 (${missingItems.length})`}
           </button>
         </div>
       </div>
@@ -118,18 +146,40 @@ export default function ApplicationPreview() {
             <h3 className="font-semibold text-amber-900 flex items-center gap-2">
               <AlertCircle className="w-5 h-5" />
               缺件清单
+              <span className="ml-2 px-2 py-0.5 bg-amber-200 text-amber-800 rounded-full text-xs">
+                共 {missingItems.length} 项
+              </span>
             </h3>
+            <p className="text-xs text-amber-700 mt-1">
+              请按类别补充完善以下内容，全部通过后方可提交申报
+            </p>
           </div>
-          <div className="p-5 space-y-3">
-            {missingItems.map((item, index) => (
-              <div 
-                key={index}
-                className="flex items-start gap-3 p-3 bg-amber-50 rounded-lg"
-              >
-                <XCircle className="w-5 h-5 text-amber-600 flex-shrink-0 mt-0.5" />
-                <div>
-                  <p className="text-sm font-medium text-amber-900">{item.category}</p>
-                  <p className="text-xs text-amber-700 mt-0.5">{item.description}</p>
+          <div className="p-5 space-y-5">
+            {Object.entries(groupedMissingItems).map(([category, items]) => (
+              <div key={category}>
+                <h4 className="text-sm font-medium text-gray-900 mb-2 flex items-center gap-2">
+                  <span className="w-1.5 h-1.5 bg-amber-500 rounded-full"></span>
+                  {category}
+                  <span className="text-xs text-gray-500 font-normal">
+                    ({items.length}项)
+                  </span>
+                </h4>
+                <div className="space-y-2 ml-3">
+                  {items.map((item, index) => (
+                    <div 
+                      key={index}
+                      className="flex items-start gap-2 p-2.5 bg-amber-50 rounded-lg"
+                    >
+                      <XCircle className="w-4 h-4 text-amber-500 flex-shrink-0 mt-0.5" />
+                      <div className="flex-1">
+                        <p className="text-sm font-medium text-amber-900">{item.itemName}</p>
+                        <p className="text-xs text-amber-700 mt-0.5">{item.description}</p>
+                      </div>
+                      <span className="text-xs text-amber-600 bg-amber-100 px-2 py-0.5 rounded flex-shrink-0">
+                        第{item.step}步
+                      </span>
+                    </div>
+                  ))}
                 </div>
               </div>
             ))}
@@ -448,6 +498,51 @@ export default function ApplicationPreview() {
                 className="flex-1 py-2.5 text-white bg-blue-600 rounded-lg hover:bg-blue-700 font-medium"
               >
                 确认提交
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showPromiseWarning && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 print:hidden">
+          <div className="bg-white rounded-xl shadow-xl max-w-lg w-full mx-4 p-6">
+            <div className="flex items-start gap-4">
+              <div className="w-12 h-12 bg-rose-100 rounded-full flex items-center justify-center flex-shrink-0">
+                <ShieldAlert className="w-6 h-6 text-rose-600" />
+              </div>
+              <div className="flex-1">
+                <h3 className="text-lg font-bold text-gray-900">承诺事项未全部确认</h3>
+                <p className="text-sm text-gray-500 mt-1">
+                  还有 <span className="font-semibold text-rose-600">{unfinishedPromises.length}</span> 项承诺事项未确认，请全部勾选后再提交。
+                </p>
+              </div>
+            </div>
+            
+            <div className="mt-4 bg-rose-50 rounded-lg p-4 space-y-2">
+              {unfinishedPromises.map((up) => (
+                <div key={up.key} className="flex items-start gap-2">
+                  <AlertTriangle className="w-4 h-4 text-rose-500 mt-0.5 flex-shrink-0" />
+                  <span className="text-sm text-rose-800">{up.label}</span>
+                </div>
+              ))}
+            </div>
+            
+            <div className="flex gap-3 mt-6">
+              <button
+                onClick={() => setShowPromiseWarning(false)}
+                className="flex-1 py-2.5 text-gray-600 bg-white border border-gray-200 rounded-lg hover:bg-gray-50"
+              >
+                我知道了
+              </button>
+              <button
+                onClick={() => {
+                  setShowPromiseWarning(false);
+                  goToPromiseStep();
+                }}
+                className="flex-1 py-2.5 text-white bg-rose-600 rounded-lg hover:bg-rose-700 font-medium"
+              >
+                去确认承诺
               </button>
             </div>
           </div>
