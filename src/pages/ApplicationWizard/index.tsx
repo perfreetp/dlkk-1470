@@ -115,8 +115,12 @@ export default function ApplicationWizard() {
   const orgCategory = currentApplication.basicInfo.orgCategory;
   const typeLabel = currentApplication.type === 'setup' ? '设立登记' : '变更登记';
   const isReturned = currentApplication.status === 'returned';
-  const latestReturnRecords = currentApplication.auditRecords?.filter(r => r.action === 'return') || [];
-  const allReturnOpinions = latestReturnRecords.flatMap(r => r.opinions).filter(Boolean) as string[];
+  const allReturnRecords = currentApplication.auditRecords?.filter(r => r.action === 'return') || [];
+  const sortedReturnRecords = [...allReturnRecords].sort((a, b) => 
+    new Date(b.time).getTime() - new Date(a.time).getTime()
+  );
+  const latestReturnRecord = sortedReturnRecords[0];
+  const latestReturnOpinions = latestReturnRecord?.opinions?.filter(Boolean) as string[] || [];
 
   const mainContentClass = (showOpinionPanel && isReturned ? 'flex-1' : 'w-full') + ' bg-white rounded-xl shadow-sm border border-gray-100 min-h-[400px]';
   const saveIconClass = 'w-4 h-4' + (isSaving ? ' animate-spin' : '');
@@ -192,9 +196,11 @@ export default function ApplicationWizard() {
                 <div className="flex items-center gap-2">
                   <AlertCircle className="w-4 h-4 text-rose-600" />
                   <span className="text-sm font-medium text-rose-700">补正意见</span>
-                  <span className="px-1.5 py-0.5 bg-white text-rose-600 text-xs font-medium rounded">
-                    {allReturnOpinions.length} 条
-                  </span>
+                  {latestReturnRecord && (
+                    <span className="px-1.5 py-0.5 bg-white text-rose-600 text-xs font-medium rounded">
+                      {latestReturnRecord.version} · {latestReturnOpinions.length} 条
+                    </span>
+                  )}
                 </div>
                 <button
                   onClick={() => setShowOpinionPanel(false)}
@@ -204,7 +210,7 @@ export default function ApplicationWizard() {
                 </button>
               </div>
               <div className="p-3 space-y-2 max-h-[500px] overflow-y-auto">
-                {allReturnOpinions.map((opinion, idx) => {
+                {latestReturnOpinions.map((opinion, idx) => {
                   const step = getStepFromOpinion(opinion);
                   const isActive = currentStep === step;
                   const divClasses = ['p-3', 'rounded-lg', 'border', 'transition-all'];

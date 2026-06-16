@@ -33,9 +33,9 @@ interface ApplicationState {
   removeAttachment: (id: string) => void;
   updatePromise: (promise: Partial<PromiseData>) => void;
   submitApplication: (id?: string) => boolean;
-  acceptApplication: (id: string) => boolean;
-  reviewApplication: (id: string) => boolean;
-  approveApplication: (id: string) => boolean;
+  acceptApplication: (id: string, opinions?: string[]) => boolean;
+  reviewApplication: (id: string, opinions?: string[]) => boolean;
+  approveApplication: (id: string, opinions?: string[]) => boolean;
   returnApplication: (id: string, opinions: string[]) => boolean;
   addCorrectionOpinion: (id: string, opinion: Omit<CorrectionOpinion, 'id' | 'date'>) => boolean;
   addVersion: (id: string, version: Omit<ApplicationVersion, 'submitTime'>) => boolean;
@@ -43,6 +43,21 @@ interface ApplicationState {
   deleteApplication: (id: string) => void;
   saveCurrentApplication: () => void;
 }
+
+const getNextVersion = (versions: ApplicationVersion[]): string => {
+  if (versions.length === 0) return 'V1.0';
+  const latest = versions[versions.length - 1].version;
+  const match = latest.match(/V(\d+)\.(\d+)/);
+  if (!match) return 'V1.0';
+  const major = parseInt(match[1], 10);
+  const minor = parseInt(match[2], 10);
+  return `V${major}.${minor + 1}`;
+};
+
+const getCurrentVersion = (versions: ApplicationVersion[]): string => {
+  if (versions.length === 0) return 'V1.0';
+  return versions[versions.length - 1].version;
+};
 
 const createEmptyApplication = (type: ApplicationType, orgCategory: OrgCategory): Application => {
   const now = new Date().toISOString();
@@ -404,13 +419,13 @@ export const useApplicationStore = create<ApplicationState>()(
         const allPromised = Object.values(app.promise).every(v => v === true);
         if (!allPromised) return false;
         
-        const versionNo = app.versions.length + 1;
-        const versionStr = `V${versionNo}.0`;
+        const versionStr = getNextVersion(app.versions);
+        const isFirstVersion = app.versions.length === 0;
         const newVersion = {
           version: versionStr,
           submitTime: new Date().toISOString(),
           status: 'submitted' as ApplicationStatus,
-          remark: versionNo === 1 ? '首次提交' : '补正提交',
+          remark: isFirstVersion ? '首次提交' : '补正提交',
         };
         
         const now = new Date().toISOString();
@@ -419,10 +434,10 @@ export const useApplicationStore = create<ApplicationState>()(
           id: generateId(),
           version: versionStr,
           action: 'submit',
-          actionLabel: versionNo === 1 ? '提交申报' : '补正提交',
+          actionLabel: isFirstVersion ? '提交申报' : '补正提交',
           operator: '办证专员',
           time: now,
-          opinions: [versionNo === 1 ? '首次提交申报材料' : '根据补正意见完成修改，重新提交'],
+          opinions: [isFirstVersion ? '首次提交申报材料' : '根据补正意见完成修改，重新提交'],
           status: 'submitted',
         };
         
@@ -481,7 +496,7 @@ export const useApplicationStore = create<ApplicationState>()(
       return true;
     },
 
-    acceptApplication: (id: string) => {
+    acceptApplication: (id: string, opinions?: string[]) => {
       const app = get().applications.find(a => a.id === id);
       if (!app || app.status !== 'submitted') return false;
       
@@ -495,13 +510,14 @@ export const useApplicationStore = create<ApplicationState>()(
         };
       }
       
-      const currentVersion = updatedVersions[versionNo - 1]?.version || 'V1.0';
+      const currentVersion = getCurrentVersion(app.versions);
+      const acceptOpinions = opinions && opinions.length > 0 ? opinions : ['申报材料齐全，符合法定形式，予以受理'];
       get().addAuditRecord(id, {
         version: currentVersion,
         action: 'accept',
         actionLabel: '受理材料',
         operator: '受理员',
-        opinions: ['申报材料齐全，符合法定形式，予以受理'],
+        opinions: acceptOpinions,
         status: 'reviewing',
       });
       
@@ -519,24 +535,25 @@ export const useApplicationStore = create<ApplicationState>()(
       return true;
     },
 
-    reviewApplication: (id: string) => {
+    reviewApplication: (id: string, opinions?: string[]) => {
       const app = get().applications.find(a => a.id === id);
       if (!app || app.status !== 'reviewing') return false;
       
-      const currentVersion = app.versions[app.versions.length - 1]?.version || 'V1.0';
+      const currentVersion = getCurrentVersion(app.versions);
+      const reviewOpinions = opinions && opinions.length > 0 ? opinions : ['开始实质审查申报材料'];
       get().addAuditRecord(id, {
         version: currentVersion,
         action: 'review',
         actionLabel: '进入审核',
         operator: '审核员',
-        opinions: ['开始实质审查申报材料'],
+        opinions: reviewOpinions,
         status: 'reviewing',
       });
       
       return true;
     },
 
-    approveApplication: (id: string) => {
+    approveApplication: (id: string, opinions?: string[]) => {
       const app = get().applications.find(a => a.id === id);
       if (!app || (app.status !== 'reviewing' && app.status !== 'submitted')) return false;
       
@@ -550,20 +567,22 @@ export const useApplicationStore = create<ApplicationState>()(
         };
       }
       
+      const defaultPassOpinion = '申报材料审核通过，符合医疗机构执业登记要求，准予登记。';
+      const passOpinions = opinions && opinions.length > 0 ? opinions : [defaultPassOpinion];
       const passOpinion: CorrectionOpinion = {
         id: generateId(),
-        content: '申报材料审核通过，符合医疗机构执业登记要求，准予登记。',
+        content: passOpinions[0],
         date: now,
         operator: '卫生健康委员会-审核科',
       };
       
-      const currentVersion = updatedVersions[versionNo - 1]?.version || 'V1.0';
+      const currentVersion = getCurrentVersion(app.versions);
       get().addAuditRecord(id, {
         version: currentVersion,
         action: 'approve',
         actionLabel: '审核通过',
         operator: '审核员',
-        opinions: ['申报材料审核通过，符合医疗机构执业登记要求，准予登记。'],
+        opinions: passOpinions,
         status: 'approved',
       });
       

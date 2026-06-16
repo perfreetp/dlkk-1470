@@ -70,16 +70,20 @@ export default function ApplicationPreview() {
   const typeLabel = application.type === 'setup' ? '设立登记' : '变更登记';
   const isReturned = application.status === 'returned';
   
-  const latestReturnRecords = application.auditRecords?.filter(r => r.action === 'return') || [];
-  const allReturnOpinions = latestReturnRecords.flatMap(r => r.opinions).filter(Boolean) as string[];
+  const allReturnRecords = application.auditRecords?.filter(r => r.action === 'return') || [];
+  const sortedReturnRecords = [...allReturnRecords].sort((a, b) => 
+    new Date(b.time).getTime() - new Date(a.time).getTime()
+  );
+  const latestReturnRecord = sortedReturnRecords[0];
+  const latestReturnOpinions = latestReturnRecord?.opinions?.filter(Boolean) as string[] || [];
   
-  const resolvedOpinions = allReturnOpinions.filter(opinion => {
+  const resolvedOpinions = latestReturnOpinions.filter(opinion => {
     return !missingItems.some(item => 
       opinion.includes(item.itemName) || opinion.includes(item.description) || opinion.includes(item.category)
     );
   });
   
-  const unresolvedOpinions = allReturnOpinions.filter(opinion => 
+  const unresolvedOpinions = latestReturnOpinions.filter(opinion => 
     !resolvedOpinions.includes(opinion)
   );
 
@@ -249,14 +253,19 @@ export default function ApplicationPreview() {
         </div>
       )}
 
-      {isReturned && allReturnOpinions.length > 0 && (
+      {isReturned && latestReturnOpinions.length > 0 && (
         <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
           <div className="px-5 py-4 border-b border-gray-100 bg-rose-50">
             <h3 className="font-semibold text-rose-900 flex items-center gap-2">
               <ThumbsUp className="w-5 h-5" />
               补正进度
+              {latestReturnRecord && (
+                <span className="px-2 py-0.5 bg-white text-rose-600 rounded-full text-xs font-medium">
+                  {latestReturnRecord.version}
+                </span>
+              )}
               <span className="ml-2 px-2 py-0.5 bg-green-100 text-green-700 rounded-full text-xs">
-                {resolvedOpinions.length}/{allReturnOpinions.length} 已解决
+                {resolvedOpinions.length}/{latestReturnOpinions.length} 已解决
               </span>
             </h3>
             <p className="text-xs text-rose-700 mt-1">

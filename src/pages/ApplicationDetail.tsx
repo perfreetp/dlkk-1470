@@ -48,6 +48,9 @@ export default function ApplicationDetail() {
   const [showReviewPanel, setShowReviewPanel] = useState(false);
   const [returnOpinions, setReturnOpinions] = useState<string[]>(['']);
   const [isProcessing, setIsProcessing] = useState(false);
+  const [selectedVersion, setSelectedVersion] = useState<string | 'all'>('all');
+  const [reviewOpinionText, setReviewOpinionText] = useState('');
+  const [reviewActionType, setReviewActionType] = useState<'accept' | 'review' | 'approve' | 'return'>('accept');
 
   const application = applications.find(a => a.id === id);
 
@@ -140,6 +143,16 @@ export default function ApplicationDetail() {
   const versions = [...application.versions].reverse();
   const correctionOpinions = application.correctionOpinions;
   const auditRecords = application.auditRecords || [];
+  const currentVersion = application.versions.length > 0 
+    ? application.versions[application.versions.length - 1].version 
+    : 'V1.0';
+  
+  const returnRecords = application.auditRecords?.filter(r => r.action === 'return') || [];
+  const sortedReturnRecords = [...returnRecords].sort((a, b) => 
+    new Date(b.time).getTime() - new Date(a.time).getTime()
+  );
+  const latestReturnRecord = sortedReturnRecords[0];
+  const latestReturnOpinions = latestReturnRecord?.opinions?.filter(Boolean) as string[] || [];
   
   const groupedAuditRecords = auditRecords.reduce((acc, record) => {
     if (!acc[record.version]) acc[record.version] = [];
@@ -152,6 +165,10 @@ export default function ApplicationDetail() {
     const numB = parseFloat(b.replace('V', ''));
     return numB - numA;
   });
+  
+  const displayVersions = selectedVersion === 'all' 
+    ? sortedVersions 
+    : sortedVersions.filter(v => v === selectedVersion);
 
   const getStepFromOpinion = (content: string): number => {
     for (const [key, step] of Object.entries(STEP_CATEGORY_MAP)) {
@@ -280,25 +297,54 @@ export default function ApplicationDetail() {
                 </div>
                 <button
                   onClick={() => setShowReviewPanel(!showReviewPanel)}
-                  className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-gray-500 bg-white border border-gray-200 rounded-lg hover:bg-gray-50"
+                  className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg transition-colors ${
+                    showReviewPanel
+                      ? 'text-blue-700 bg-blue-50 border border-blue-200'
+                      : 'text-gray-500 bg-white border border-gray-200 hover:bg-gray-50'
+                  }`}
                 >
                   <Gauge className="w-3.5 h-3.5" />
-                  模拟审核操作
+                  受理员工作台
                 </button>
               </div>
             </div>
 
             {showReviewPanel && (
-              <div className="px-5 py-4 bg-amber-50 border-b border-amber-100">
+              <div className="px-5 py-4 bg-blue-50 border-b border-blue-100">
                 <div className="flex items-start gap-2 mb-3">
-                  <AlertCircle className="w-4 h-4 text-amber-600 flex-shrink-0 mt-0.5" />
-                  <p className="text-xs text-amber-800">
-                    此面板用于模拟审核操作流程序列，从受理到审核、通过或退回，方便测试完整的业务闭环。
-                  </p>
+                  <ShieldCheck className="w-4 h-4 text-blue-600 flex-shrink-0 mt-0.5" />
+                  <div>
+                    <p className="text-xs font-medium text-blue-800">
+                      当前版本：<span className="font-mono">{currentVersion}</span>
+                    </p>
+                    <p className="text-xs text-blue-600 mt-0.5">
+                      受理员视角 · 填写办理意见后执行对应操作，记录会追加到当前版本台账
+                    </p>
+                  </div>
                 </div>
+                
+                <div className="mb-3">
+                  <label className="text-xs font-medium text-gray-700 mb-1.5 block">办理意见</label>
+                  <textarea
+                    value={reviewOpinionText}
+                    onChange={(e) => setReviewOpinionText(e.target.value)}
+                    placeholder="请输入办理意见（可选）..."
+                    className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 resize-none"
+                    rows={2}
+                  />
+                </div>
+
                 <div className="flex flex-wrap gap-2">
                   <button
-                    onClick={handleAccept}
+                    onClick={async () => {
+                      if (!canAccept) return;
+                      setIsProcessing(true);
+                      const opinions = reviewOpinionText.trim() ? [reviewOpinionText.trim()] : undefined;
+                      acceptApplication(application.id, opinions);
+                      await new Promise(r => setTimeout(r, 600));
+                      setReviewOpinionText('');
+                      setIsProcessing(false);
+                    }}
                     disabled={!canAccept || isProcessing}
                     className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium transition-all ${
                       canAccept && !isProcessing
@@ -307,13 +353,16 @@ export default function ApplicationDetail() {
                     }`}
                   >
                     <Send className="w-3.5 h-3.5" />
-                    1. 受理材料
+                    受理材料
                   </button>
                   <button
                     onClick={async () => {
+                      if (!canReview) return;
                       setIsProcessing(true);
-                      reviewApplication(application.id);
-                      await new Promise(r => setTimeout(r, 800));
+                      const opinions = reviewOpinionText.trim() ? [reviewOpinionText.trim()] : undefined;
+                      reviewApplication(application.id, opinions);
+                      await new Promise(r => setTimeout(r, 600));
+                      setReviewOpinionText('');
                       setIsProcessing(false);
                     }}
                     disabled={!canReview || isProcessing}
@@ -324,10 +373,18 @@ export default function ApplicationDetail() {
                     }`}
                   >
                     <RefreshCw className={`w-3.5 h-3.5 ${canReview && !isProcessing ? 'animate-spin' : ''}`} style={{ animationDuration: canReview && !isProcessing ? '3s' : '0s' }} />
-                    2. 进入审核
+                    进入审核
                   </button>
                   <button
-                    onClick={handleApprove}
+                    onClick={async () => {
+                      if (!canApprove) return;
+                      setIsProcessing(true);
+                      const opinions = reviewOpinionText.trim() ? [reviewOpinionText.trim()] : undefined;
+                      approveApplication(application.id, opinions);
+                      await new Promise(r => setTimeout(r, 600));
+                      setReviewOpinionText('');
+                      setIsProcessing(false);
+                    }}
                     disabled={!canApprove || isProcessing}
                     className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium transition-all ${
                       canApprove && !isProcessing
@@ -335,8 +392,8 @@ export default function ApplicationDetail() {
                         : 'bg-gray-100 text-gray-400 cursor-not-allowed'
                     }`}
                   >
-                    <ShieldCheck className="w-3.5 h-3.5" />
-                    3. 审核通过
+                    <CheckCircle2 className="w-3.5 h-3.5" />
+                    审核通过
                   </button>
                   <button
                     onClick={handleOpenReturnDialog}
@@ -348,7 +405,7 @@ export default function ApplicationDetail() {
                     }`}
                   >
                     <XCircle className="w-3.5 h-3.5" />
-                    3. 退回补正
+                    退回补正
                   </button>
                 </div>
               </div>
@@ -391,59 +448,60 @@ export default function ApplicationDetail() {
             </div>
           </div>
 
-          {correctionOpinions.length > 0 && (
+          {(application.status === 'returned' && latestReturnOpinions.length > 0) || (application.status === 'approved' && correctionOpinions.length > 0) ? (
             <div className={`bg-white rounded-xl shadow-sm border overflow-hidden ${
               application.status === 'returned' ? 'border-rose-200' : 'border-green-200'
             }`}>
               <div className={`px-5 py-4 border-b ${
                 application.status === 'returned' ? 'border-rose-100 bg-rose-50' : 'border-green-100 bg-green-50'
               }`}>
-                <div className="flex items-center gap-3">
-                  <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${
-                    application.status === 'returned' ? 'bg-rose-100' : 'bg-green-100'
-                  }`}>
-                    <MessageSquare className={`w-5 h-5 ${
-                      application.status === 'returned' ? 'text-rose-600' : 'text-green-600'
-                    }`} />
-                  </div>
-                  <div>
-                    <h3 className={`font-semibold ${
-                      application.status === 'returned' ? 'text-rose-900' : 'text-green-900'
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${
+                      application.status === 'returned' ? 'bg-rose-100' : 'bg-green-100'
                     }`}>
-                      {application.status === 'returned' ? '补正意见' : '审核通知'}
-                    </h3>
-                    <p className={`text-xs mt-0.5 ${
-                      application.status === 'returned' ? 'text-rose-600' : 'text-green-600'
-                    }`}>
-                      共 {correctionOpinions.length} 条记录
-                    </p>
+                      <MessageSquare className={`w-5 h-5 ${
+                        application.status === 'returned' ? 'text-rose-600' : 'text-green-600'
+                      }`} />
+                    </div>
+                    <div>
+                      <h3 className={`font-semibold ${
+                        application.status === 'returned' ? 'text-rose-900' : 'text-green-900'
+                      }`}>
+                        {application.status === 'returned' ? '补正意见' : '审核通知'}
+                      </h3>
+                      <p className={`text-xs mt-0.5 ${
+                        application.status === 'returned' ? 'text-rose-600' : 'text-green-600'
+                      }`}>
+                        {application.status === 'returned' 
+                          ? `${latestReturnRecord?.version || ''} · 共 ${latestReturnOpinions.length} 条` 
+                          : `共 ${correctionOpinions.length} 条记录`}
+                      </p>
+                    </div>
                   </div>
+                  {application.status === 'returned' && returnRecords.length > 1 && (
+                    <span className="text-xs text-rose-500 bg-rose-100 px-2 py-1 rounded">
+                      历史意见请查看办理台账
+                    </span>
+                  )}
                 </div>
               </div>
               <div className="p-5 space-y-3">
-                {correctionOpinions.map(opinion => {
-                  const step = getStepFromOpinion(opinion.content);
-                  return (
-                    <div key={opinion.id} className={`flex items-start gap-3 p-4 rounded-lg ${
-                      application.status === 'returned' ? 'bg-rose-50' : 'bg-green-50'
-                    }`}>
-                      <AlertCircle className={`w-5 h-5 flex-shrink-0 mt-0.5 ${
-                        application.status === 'returned' ? 'text-rose-500' : 'text-green-500'
-                      }`} />
-                      <div className="flex-1">
-                        <p className={`text-sm ${
-                          application.status === 'returned' ? 'text-rose-900' : 'text-green-900'
-                        }`}>{opinion.content}</p>
-                        <div className="flex items-center gap-3 mt-2">
-                          <span className={`text-xs ${
-                            application.status === 'returned' ? 'text-rose-600' : 'text-green-600'
-                          }`}>{opinion.date ? opinion.date.slice(0, 16).replace('T', ' ') : ''}</span>
-                          <span className={`text-xs ${
-                            application.status === 'returned' ? 'text-rose-600' : 'text-green-600'
-                          }`}>· {opinion.operator}</span>
+                {application.status === 'returned' ? (
+                  latestReturnOpinions.map((content, idx) => {
+                    const step = getStepFromOpinion(content);
+                    return (
+                      <div key={idx} className={`flex items-start gap-3 p-4 rounded-lg bg-rose-50`}>
+                        <AlertCircle className="w-5 h-5 flex-shrink-0 mt-0.5 text-rose-500" />
+                        <div className="flex-1">
+                          <p className="text-sm text-rose-900">{content}</p>
+                          <div className="flex items-center gap-3 mt-2">
+                            <span className="text-xs text-rose-600">
+                              {latestReturnRecord?.time ? latestReturnRecord.time.slice(0, 16).replace('T', ' ') : ''}
+                            </span>
+                            <span className="text-xs text-rose-600">· {latestReturnRecord?.operator || ''}</span>
+                          </div>
                         </div>
-                      </div>
-                      {application.status === 'returned' && (
                         <button
                           onClick={() => navigate(`/applications/${application.id}/edit?step=${step}`)}
                           className="flex-shrink-0 flex items-center gap-1 px-3 py-1.5 text-xs font-medium text-rose-600 bg-rose-100 rounded-lg hover:bg-rose-200 transition-colors"
@@ -451,10 +509,26 @@ export default function ApplicationDetail() {
                           去第{step}步修改
                           <ArrowRight className="w-3 h-3" />
                         </button>
-                      )}
-                    </div>
-                  );
-                })}
+                      </div>
+                    );
+                  })
+                ) : (
+                  correctionOpinions.map(opinion => {
+                    const step = getStepFromOpinion(opinion.content);
+                    return (
+                      <div key={opinion.id} className={`flex items-start gap-3 p-4 rounded-lg bg-green-50`}>
+                        <AlertCircle className="w-5 h-5 flex-shrink-0 mt-0.5 text-green-500" />
+                        <div className="flex-1">
+                          <p className="text-sm text-green-900">{opinion.content}</p>
+                          <div className="flex items-center gap-3 mt-2">
+                            <span className="text-xs text-green-600">{opinion.date ? opinion.date.slice(0, 16).replace('T', ' ') : ''}</span>
+                            <span className="text-xs text-green-600">· {opinion.operator}</span>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })
+                )}
               </div>
               {application.status === 'returned' && (
                 <div className="px-5 py-3 bg-rose-50 border-t border-rose-100 flex justify-end">
@@ -469,23 +543,50 @@ export default function ApplicationDetail() {
                 </div>
               )}
             </div>
-          )}
+          ) : null}
 
           {auditRecords.length > 0 && (
             <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
               <div className="px-5 py-4 border-b border-gray-100">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center">
-                    <ListChecks className="w-5 h-5 text-blue-600" />
+                <div className="flex items-center justify-between mb-3">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center">
+                      <ListChecks className="w-5 h-5 text-blue-600" />
+                    </div>
+                    <div>
+                      <h3 className="font-semibold text-gray-900">办理台账</h3>
+                      <p className="text-xs text-gray-500 mt-0.5">共 {auditRecords.length} 条操作记录</p>
+                    </div>
                   </div>
-                  <div>
-                    <h3 className="font-semibold text-gray-900">办理记录</h3>
-                    <p className="text-xs text-gray-500 mt-0.5">共 {auditRecords.length} 条操作记录</p>
-                  </div>
+                </div>
+                <div className="flex gap-1 flex-wrap">
+                  <button
+                    onClick={() => setSelectedVersion('all')}
+                    className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
+                      selectedVersion === 'all'
+                        ? 'bg-blue-600 text-white'
+                        : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                    }`}
+                  >
+                    全部版本
+                  </button>
+                  {sortedVersions.map(version => (
+                    <button
+                      key={version}
+                      onClick={() => setSelectedVersion(version)}
+                      className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
+                        selectedVersion === version
+                          ? 'bg-blue-600 text-white'
+                          : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                      }`}
+                    >
+                      {version}
+                    </button>
+                  ))}
                 </div>
               </div>
               <div className="p-5 space-y-6">
-                {sortedVersions.map(version => (
+                {displayVersions.map(version => (
                   <div key={version} className="relative pl-8">
                     <div className="absolute left-0 top-0 w-3 h-3 bg-blue-500 rounded-full border-4 border-white shadow-sm" />
                     <div className="absolute left-1.5 top-3 bottom-0 w-0.5 bg-gray-200" style={{ height: 'calc(100% - 12px)' }} />
