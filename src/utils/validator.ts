@@ -431,3 +431,42 @@ export const formatFileSize = (bytes: number): string => {
   const i = Math.floor(Math.log(bytes) / Math.log(k));
   return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
 };
+
+export const groupValidationByCategory = (results: ValidationResult[]): Record<string, ValidationResult[]> => {
+  const groups: Record<string, ValidationResult[]> = {};
+  
+  const CATEGORY_MAP: Record<string, string> = {
+    orgName: '基本信息',
+    practiceAddress: '基本信息',
+    legalRepresentative: '基本信息',
+    legalIdCard: '基本信息',
+    legalPhone: '基本信息',
+    mainDirector: '基本信息',
+    directorIdCard: '基本信息',
+    directorPhone: '基本信息',
+    departments: '诊疗科目',
+    departmentPersonnel: '诊疗科目',
+    departmentEquipment: '诊疗科目',
+    personnel: '人员资质',
+    personnelCount: '人员资质',
+    personnelCertificate: '人员资质',
+    premises: '房屋布局',
+    equipment: '设备配置',
+    attachments: '附件材料',
+    promise: '承诺事项',
+  };
+  
+  results.forEach(result => {
+    let category = '其他';
+    for (const [key, cat] of Object.entries(CATEGORY_MAP)) {
+      if (result.field.includes(key) || result.message.includes(key)) {
+        category = cat;
+        break;
+      }
+    }
+    if (!groups[category]) groups[category] = [];
+    groups[category].push(result);
+  });
+  
+  return groups;
+};

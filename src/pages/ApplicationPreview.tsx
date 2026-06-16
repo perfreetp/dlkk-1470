@@ -19,11 +19,34 @@ import {
   ShieldAlert,
   AlertTriangle,
   ArrowRight,
-  Edit3
+  Edit3,
+  CheckCircle,
+  ThumbsUp
 } from 'lucide-react';
 import { useApplicationStore } from '@/store/applicationStore';
 import { generateMissingItems, validateApplication, getUnfinishedPromises } from '@/utils/validator';
 import { ORG_CATEGORY_MAP } from '@/types';
+
+const STEP_CATEGORY_MAP: Record<string, number> = {
+  '基本信息': 1,
+  '诊疗科目': 2,
+  '人员资质': 3,
+  '房屋与布局': 4,
+  '设备配置': 5,
+  '附件材料': 6,
+  '承诺事项': 7,
+};
+
+const getStepFromOpinion = (content: string): number => {
+  for (const [key, step] of Object.entries(STEP_CATEGORY_MAP)) {
+    if (content.includes(key)) return step;
+  }
+  if (content.includes('人员')) return 3;
+  if (content.includes('设备')) return 5;
+  if (content.includes('附件') || content.includes('材料')) return 6;
+  if (content.includes('承诺')) return 7;
+  return 1;
+};
 
 export default function ApplicationPreview() {
   const { id } = useParams<{ id: string }>();
@@ -45,6 +68,20 @@ export default function ApplicationPreview() {
 
   const orgCategory = application.basicInfo.orgCategory;
   const typeLabel = application.type === 'setup' ? '设立登记' : '变更登记';
+  const isReturned = application.status === 'returned';
+  
+  const latestReturnRecords = application.auditRecords?.filter(r => r.action === 'return') || [];
+  const allReturnOpinions = latestReturnRecords.flatMap(r => r.opinions).filter(Boolean) as string[];
+  
+  const resolvedOpinions = allReturnOpinions.filter(opinion => {
+    return !missingItems.some(item => 
+      opinion.includes(item.itemName) || opinion.includes(item.description) || opinion.includes(item.category)
+    );
+  });
+  
+  const unresolvedOpinions = allReturnOpinions.filter(opinion => 
+    !resolvedOpinions.includes(opinion)
+  );
 
   const handleSubmit = () => {
     const success = submitApplication(application.id);
@@ -208,6 +245,72 @@ export default function ApplicationPreview() {
                 </div>
               );
             })}
+          </div>
+        </div>
+      )}
+
+      {isReturned && allReturnOpinions.length > 0 && (
+        <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
+          <div className="px-5 py-4 border-b border-gray-100 bg-rose-50">
+            <h3 className="font-semibold text-rose-900 flex items-center gap-2">
+              <ThumbsUp className="w-5 h-5" />
+              补正进度
+              <span className="ml-2 px-2 py-0.5 bg-green-100 text-green-700 rounded-full text-xs">
+                {resolvedOpinions.length}/{allReturnOpinions.length} 已解决
+              </span>
+            </h3>
+            <p className="text-xs text-rose-700 mt-1">
+              上次退回的补正意见完成情况
+            </p>
+          </div>
+          <div className="p-5 space-y-5">
+            {resolvedOpinions.length > 0 && (
+              <div>
+                <h4 className="text-sm font-medium text-green-700 flex items-center gap-2 mb-2">
+                  <CheckCircle className="w-4 h-4" />
+                  已解决 ({resolvedOpinions.length} 项)
+                </h4>
+                <div className="space-y-2 ml-2">
+                  {resolvedOpinions.map((opinion, idx) => (
+                    <div key={idx} className="flex items-start gap-2 p-2.5 bg-green-50 rounded-lg border border-green-200">
+                      <CheckCircle2 className="w-4 h-4 text-green-500 flex-shrink-0 mt-0.5" />
+                      <div className="flex-1">
+                        <p className="text-sm font-medium text-green-800">{opinion}</p>
+                        <p className="text-xs text-green-600 mt-0.5">✅ 已解决</p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+            {unresolvedOpinions.length > 0 && (
+              <div>
+                <h4 className="text-sm font-medium text-rose-700 flex items-center gap-2 mb-2">
+                  <AlertCircle className="w-4 h-4" />
+                  待解决 ({unresolvedOpinions.length} 项)
+                </h4>
+                <div className="space-y-2 ml-2">
+                  {unresolvedOpinions.map((opinion, idx) => {
+                    const step = getStepFromOpinion(opinion);
+                    return (
+                      <div key={idx} className="flex items-start gap-2 p-2.5 bg-rose-50 rounded-lg border border-rose-200">
+                        <XCircle className="w-4 h-4 text-rose-500 flex-shrink-0 mt-0.5" />
+                        <div className="flex-1">
+                          <p className="text-sm font-medium text-rose-800">{opinion}</p>
+                        </div>
+                        <button
+                          onClick={() => goToStep(step)}
+                          className="flex-shrink-0 flex items-center gap-1 px-2.5 py-1 text-xs font-medium text-rose-600 bg-white hover:bg-rose-100 rounded-md transition-colors border border-rose-200"
+                        >
+                          <Edit3 className="w-3 h-3" />
+                          去第{step}步修改
+                        </button>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
           </div>
         </div>
       )}

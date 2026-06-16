@@ -21,7 +21,9 @@ import {
   X,
   Plus,
   Trash2,
-  ArrowRight
+  ArrowRight,
+  ListChecks,
+  FileText
 } from 'lucide-react';
 import { useApplicationStore } from '@/store/applicationStore';
 import StatusBadge from '@/components/StatusBadge';
@@ -40,7 +42,7 @@ const STEP_CATEGORY_MAP: Record<string, number> = {
 export default function ApplicationDetail() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const { applications, acceptApplication, approveApplication, returnApplication } = useApplicationStore();
+  const { applications, acceptApplication, approveApplication, returnApplication, reviewApplication } = useApplicationStore();
   const [showHistory, setShowHistory] = useState(false);
   const [showReturnDialog, setShowReturnDialog] = useState(false);
   const [showReviewPanel, setShowReviewPanel] = useState(false);
@@ -137,6 +139,30 @@ export default function ApplicationDetail() {
 
   const versions = [...application.versions].reverse();
   const correctionOpinions = application.correctionOpinions;
+  const auditRecords = application.auditRecords || [];
+  
+  const groupedAuditRecords = auditRecords.reduce((acc, record) => {
+    if (!acc[record.version]) acc[record.version] = [];
+    acc[record.version].push(record);
+    return acc;
+  }, {} as Record<string, typeof auditRecords>);
+  
+  const sortedVersions = Object.keys(groupedAuditRecords).sort((a, b) => {
+    const numA = parseFloat(a.replace('V', ''));
+    const numB = parseFloat(b.replace('V', ''));
+    return numB - numA;
+  });
+
+  const getStepFromOpinion = (content: string): number => {
+    for (const [key, step] of Object.entries(STEP_CATEGORY_MAP)) {
+      if (content.includes(key)) return step;
+    }
+    if (content.includes('人员')) return 3;
+    if (content.includes('设备')) return 5;
+    if (content.includes('附件') || content.includes('材料')) return 6;
+    if (content.includes('承诺')) return 7;
+    return 1;
+  };
 
   const progressSteps = [
     { 
@@ -284,7 +310,12 @@ export default function ApplicationDetail() {
                     1. 受理材料
                   </button>
                   <button
-                    onClick={() => acceptApplication(application.id)}
+                    onClick={async () => {
+                      setIsProcessing(true);
+                      reviewApplication(application.id);
+                      await new Promise(r => setTimeout(r, 800));
+                      setIsProcessing(false);
+                    }}
                     disabled={!canReview || isProcessing}
                     className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium transition-all ${
                       canReview && !isProcessing
@@ -390,28 +421,40 @@ export default function ApplicationDetail() {
                 </div>
               </div>
               <div className="p-5 space-y-3">
-                {correctionOpinions.map(opinion => (
-                  <div key={opinion.id} className={`flex items-start gap-3 p-4 rounded-lg ${
-                    application.status === 'returned' ? 'bg-rose-50' : 'bg-green-50'
-                  }`}>
-                    <AlertCircle className={`w-5 h-5 flex-shrink-0 mt-0.5 ${
-                      application.status === 'returned' ? 'text-rose-500' : 'text-green-500'
-                    }`} />
-                    <div className="flex-1">
-                      <p className={`text-sm ${
-                        application.status === 'returned' ? 'text-rose-900' : 'text-green-900'
-                      }`}>{opinion.content}</p>
-                      <div className="flex items-center gap-3 mt-2">
-                        <span className={`text-xs ${
-                          application.status === 'returned' ? 'text-rose-600' : 'text-green-600'
-                        }`}>{opinion.date ? opinion.date.slice(0, 16).replace('T', ' ') : ''}</span>
-                        <span className={`text-xs ${
-                          application.status === 'returned' ? 'text-rose-600' : 'text-green-600'
-                        }`}>· {opinion.operator}</span>
+                {correctionOpinions.map(opinion => {
+                  const step = getStepFromOpinion(opinion.content);
+                  return (
+                    <div key={opinion.id} className={`flex items-start gap-3 p-4 rounded-lg ${
+                      application.status === 'returned' ? 'bg-rose-50' : 'bg-green-50'
+                    }`}>
+                      <AlertCircle className={`w-5 h-5 flex-shrink-0 mt-0.5 ${
+                        application.status === 'returned' ? 'text-rose-500' : 'text-green-500'
+                      }`} />
+                      <div className="flex-1">
+                        <p className={`text-sm ${
+                          application.status === 'returned' ? 'text-rose-900' : 'text-green-900'
+                        }`}>{opinion.content}</p>
+                        <div className="flex items-center gap-3 mt-2">
+                          <span className={`text-xs ${
+                            application.status === 'returned' ? 'text-rose-600' : 'text-green-600'
+                          }`}>{opinion.date ? opinion.date.slice(0, 16).replace('T', ' ') : ''}</span>
+                          <span className={`text-xs ${
+                            application.status === 'returned' ? 'text-rose-600' : 'text-green-600'
+                          }`}>· {opinion.operator}</span>
+                        </div>
                       </div>
+                      {application.status === 'returned' && (
+                        <button
+                          onClick={() => navigate(`/applications/${application.id}/edit?step=${step}`)}
+                          className="flex-shrink-0 flex items-center gap-1 px-3 py-1.5 text-xs font-medium text-rose-600 bg-rose-100 rounded-lg hover:bg-rose-200 transition-colors"
+                        >
+                          去第{step}步修改
+                          <ArrowRight className="w-3 h-3" />
+                        </button>
+                      )}
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
               {application.status === 'returned' && (
                 <div className="px-5 py-3 bg-rose-50 border-t border-rose-100 flex justify-end">
@@ -425,6 +468,72 @@ export default function ApplicationDetail() {
                   </button>
                 </div>
               )}
+            </div>
+          )}
+
+          {auditRecords.length > 0 && (
+            <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
+              <div className="px-5 py-4 border-b border-gray-100">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center">
+                    <ListChecks className="w-5 h-5 text-blue-600" />
+                  </div>
+                  <div>
+                    <h3 className="font-semibold text-gray-900">办理记录</h3>
+                    <p className="text-xs text-gray-500 mt-0.5">共 {auditRecords.length} 条操作记录</p>
+                  </div>
+                </div>
+              </div>
+              <div className="p-5 space-y-6">
+                {sortedVersions.map(version => (
+                  <div key={version} className="relative pl-8">
+                    <div className="absolute left-0 top-0 w-3 h-3 bg-blue-500 rounded-full border-4 border-white shadow-sm" />
+                    <div className="absolute left-1.5 top-3 bottom-0 w-0.5 bg-gray-200" style={{ height: 'calc(100% - 12px)' }} />
+                    <div className="flex items-center gap-2 mb-2">
+                      <span className="px-2 py-0.5 bg-blue-100 text-blue-700 text-xs font-medium rounded-md">
+                        {version}
+                      </span>
+                      <span className="text-xs text-gray-500">
+                        提交时间：{application.versions.find(v => v.version === version)?.submitTime?.slice(0, 16).replace('T', ' ') || '-'}
+                      </span>
+                    </div>
+                    <div className="space-y-3">
+                      {groupedAuditRecords[version].map(record => (
+                        <div key={record.id} className="bg-gray-50 rounded-lg p-4">
+                          <div className="flex items-start justify-between mb-2">
+                            <div className="flex items-center gap-2">
+                              <span className={`px-2 py-0.5 text-xs font-medium rounded-md ${
+                                record.action === 'approve' ? 'bg-green-100 text-green-700' :
+                                record.action === 'return' ? 'bg-red-100 text-red-700' :
+                                record.action === 'submit' ? 'bg-blue-100 text-blue-700' :
+                                'bg-yellow-100 text-yellow-700'
+                              }`}>
+                                {record.actionLabel}
+                              </span>
+                            </div>
+                            <div className="text-right">
+                              <p className="text-xs text-gray-500">{record.operator}</p>
+                              <p className="text-xs text-gray-400 mt-0.5">
+                                {record.time ? record.time.slice(0, 16).replace('T', ' ') : '-'}
+                              </p>
+                            </div>
+                          </div>
+                          {record.opinions && record.opinions.length > 0 && (
+                            <ul className="space-y-1">
+                              {record.opinions.map((op, idx) => (
+                                <li key={idx} className="text-sm text-gray-600 flex items-start gap-2">
+                                  <FileText className="w-3.5 h-3.5 text-gray-400 mt-0.5 flex-shrink-0" />
+                                  <span>{op}</span>
+                                </li>
+                              ))}
+                            </ul>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
             </div>
           )}
 

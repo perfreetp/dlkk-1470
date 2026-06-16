@@ -92,6 +92,19 @@ export interface ApplicationVersion {
   remark: string;
 }
 
+export type AuditAction = 'accept' | 'review' | 'approve' | 'return' | 'submit';
+
+export interface AuditRecord {
+  id: string;
+  version: string;
+  action: AuditAction;
+  actionLabel: string;
+  operator: string;
+  time: string;
+  opinions: string[];
+  status: ApplicationStatus;
+}
+
 export interface Application {
   id: string;
   type: ApplicationType;
@@ -105,6 +118,7 @@ export interface Application {
   promise: PromiseData;
   versions: ApplicationVersion[];
   correctionOpinions: CorrectionOpinion[];
+  auditRecords: AuditRecord[];
   createdAt: string;
   submittedAt: string;
   currentStep: number;

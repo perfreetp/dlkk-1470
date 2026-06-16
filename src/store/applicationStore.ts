@@ -1,9 +1,10 @@
 
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import { Application, ApplicationType, BasicInfo, Department, Personnel, Premises, Equipment, Attachment, ApplicationStatus, OrgCategory, PromiseData, CorrectionOpinion, ApplicationVersion } from '@/types';
+import { Application, ApplicationType, BasicInfo, Department, Personnel, Premises, Equipment, Attachment, ApplicationStatus, OrgCategory, PromiseData, CorrectionOpinion, ApplicationVersion, AuditRecord } from '@/types';
 import { mockApplications } from '@/utils/mockData';
 import { generateId } from '@/utils/mockData';
+import { validateApplication } from '@/utils/validator';
 
 interface ApplicationState {
   applications: Application[];
@@ -38,6 +39,7 @@ interface ApplicationState {
   returnApplication: (id: string, opinions: string[]) => boolean;
   addCorrectionOpinion: (id: string, opinion: Omit<CorrectionOpinion, 'id' | 'date'>) => boolean;
   addVersion: (id: string, version: Omit<ApplicationVersion, 'submitTime'>) => boolean;
+  addAuditRecord: (id: string, record: Omit<AuditRecord, 'id' | 'time'>) => boolean;
   deleteApplication: (id: string) => void;
   saveCurrentApplication: () => void;
 }
@@ -87,6 +89,7 @@ const createEmptyApplication = (type: ApplicationType, orgCategory: OrgCategory)
     },
     versions: [],
     correctionOpinions: [],
+    auditRecords: [],
     createdAt: now,
     submittedAt: '',
   };
@@ -395,18 +398,33 @@ export const useApplicationStore = create<ApplicationState>()(
         const app = get().applications.find(a => a.id === appId);
         if (!app) return false;
         
+        const validation = validateApplication(app);
+        if (!validation.valid) return false;
+        
         const allPromised = Object.values(app.promise).every(v => v === true);
         if (!allPromised) return false;
         
         const versionNo = app.versions.length + 1;
+        const versionStr = `V${versionNo}.0`;
         const newVersion = {
-          version: `V${versionNo}.0`,
+          version: versionStr,
           submitTime: new Date().toISOString(),
           status: 'submitted' as ApplicationStatus,
           remark: versionNo === 1 ? '首次提交' : '补正提交',
         };
         
         const now = new Date().toISOString();
+        
+        const newAuditRecord: AuditRecord = {
+          id: generateId(),
+          version: versionStr,
+          action: 'submit',
+          actionLabel: versionNo === 1 ? '提交申报' : '补正提交',
+          operator: '办证专员',
+          time: now,
+          opinions: [versionNo === 1 ? '首次提交申报材料' : '根据补正意见完成修改，重新提交'],
+          status: 'submitted',
+        };
         
         set(state => ({
           applications: state.applications.map(a =>
@@ -417,6 +435,7 @@ export const useApplicationStore = create<ApplicationState>()(
                   submittedAt: now,
                   currentStep: 7,
                   versions: [...a.versions, newVersion],
+                  auditRecords: [...a.auditRecords, newAuditRecord],
                 }
               : a
           ),
@@ -428,11 +447,38 @@ export const useApplicationStore = create<ApplicationState>()(
                   submittedAt: now,
                   currentStep: 7,
                   versions: [...app.versions, newVersion],
+                  auditRecords: [...app.auditRecords, newAuditRecord],
                 }
               : state.currentApplication,
         }));
         
         return true;
+    },
+
+    addAuditRecord: (id: string, record: Omit<AuditRecord, 'id' | 'time'>) => {
+      const app = get().applications.find(a => a.id === id);
+      if (!app) return false;
+      
+      const now = new Date().toISOString();
+      const newRecord: AuditRecord = {
+        ...record,
+        id: generateId(),
+        time: now,
+      };
+      
+      set(state => ({
+        applications: state.applications.map(a =>
+          a.id === id
+            ? { ...a, auditRecords: [...a.auditRecords, newRecord] }
+            : a
+        ),
+        currentApplication:
+          state.currentApplication?.id === id
+            ? { ...state.currentApplication, auditRecords: [...state.currentApplication.auditRecords, newRecord] }
+            : state.currentApplication,
+      }));
+      
+      return true;
     },
 
     acceptApplication: (id: string) => {
@@ -448,6 +494,16 @@ export const useApplicationStore = create<ApplicationState>()(
           status: 'reviewing',
         };
       }
+      
+      const currentVersion = updatedVersions[versionNo - 1]?.version || 'V1.0';
+      get().addAuditRecord(id, {
+        version: currentVersion,
+        action: 'accept',
+        actionLabel: '受理材料',
+        operator: '受理员',
+        opinions: ['申报材料齐全，符合法定形式，予以受理'],
+        status: 'reviewing',
+      });
       
       set(state => ({
         applications: state.applications.map(a =>
@@ -466,6 +522,17 @@ export const useApplicationStore = create<ApplicationState>()(
     reviewApplication: (id: string) => {
       const app = get().applications.find(a => a.id === id);
       if (!app || app.status !== 'reviewing') return false;
+      
+      const currentVersion = app.versions[app.versions.length - 1]?.version || 'V1.0';
+      get().addAuditRecord(id, {
+        version: currentVersion,
+        action: 'review',
+        actionLabel: '进入审核',
+        operator: '审核员',
+        opinions: ['开始实质审查申报材料'],
+        status: 'reviewing',
+      });
+      
       return true;
     },
 
@@ -489,6 +556,16 @@ export const useApplicationStore = create<ApplicationState>()(
         date: now,
         operator: '卫生健康委员会-审核科',
       };
+      
+      const currentVersion = updatedVersions[versionNo - 1]?.version || 'V1.0';
+      get().addAuditRecord(id, {
+        version: currentVersion,
+        action: 'approve',
+        actionLabel: '审核通过',
+        operator: '审核员',
+        opinions: ['申报材料审核通过，符合医疗机构执业登记要求，准予登记。'],
+        status: 'approved',
+      });
       
       set(state => ({
         applications: state.applications.map(a =>
@@ -534,6 +611,16 @@ export const useApplicationStore = create<ApplicationState>()(
         date: now,
         operator: '卫生健康委员会-审核科',
       }));
+      
+      const currentVersion = updatedVersions[versionNo - 1]?.version || 'V1.0';
+      get().addAuditRecord(id, {
+        version: currentVersion,
+        action: 'return',
+        actionLabel: '退回补正',
+        operator: '审核员',
+        opinions,
+        status: 'returned',
+      });
       
       set(state => ({
         applications: state.applications.map(a =>
